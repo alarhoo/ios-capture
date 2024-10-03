@@ -4,6 +4,8 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { FloatingLabel, FileInput, Label, Button, TextInput } from 'flowbite-react'
 import Image from 'next/image'
+import loaderGif from '@/components/loading.gif'
+import Overlay from '@/components/Overlay'
 
 const PropertyForm = () => {
   const [clientName, setClientName] = useState('')
@@ -206,6 +208,7 @@ const PropertyForm = () => {
 
   return (
     <form className='max-w-sm mx-auto'>
+      <Overlay isLoading={isLoading} loaderGif={loaderGif} />
       <div className='font-semibold text-center my-5'>Property Visit Documentation</div>
       <FloatingLabel
         variant='filled'
@@ -302,6 +305,13 @@ const PropertyForm = () => {
           View PDF
         </Button>
       </div>
+
+      {/* Loader GIF */}
+      {isLoading && (
+        <div className='my-5 flex justify-center'>
+          <Image src={loaderGif} alt='Loading...' width={50} height={50} />
+        </div>
+      )}
 
       {/* Embed the PDF in an iframe */}
       {pdfData && (
