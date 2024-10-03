@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { FloatingLabel, FileInput, Label, Button, TextInput } from 'flowbite-react'
+import { FloatingLabel, FileInput, Label, Button, TextInput, Textarea, HR } from 'flowbite-react'
 import Image from 'next/image'
 import loaderGif from '@/components/loading.gif'
 import Overlay from '@/components/Overlay'
@@ -17,6 +17,7 @@ const PropertyForm = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [pdfData, setPdfData] = useState(null) // New state for storing PDF base64 data
   const [errors, setErrors] = useState({})
+  const [deficiencies, setDeficiencies] = useState([])
 
   const handleBannerUpload = (e) => {
     const file = e.target.files[0]
@@ -77,7 +78,7 @@ const PropertyForm = () => {
       // Set larger font size for the headers
       doc.setFontSize(30)
       doc.textAlign = 'center'
-      const headerText = 'Move-In Report'
+      const headerText = 'Onsite Inspection Report'
       const textWidth = doc.getTextWidth(headerText)
       doc.text(headerText, 105, 50, { align: 'center' })
       // Set the line color and width
@@ -112,8 +113,18 @@ const PropertyForm = () => {
           doc.addImage(bannerBase64, 'JPEG', 20, 110, bannerWidth, finalBannerHeight)
         }
       }
+      doc.addPage()
 
-      doc.addPage() // Add new page for area images
+      // Calculate the center of the page
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+
+      // Move-In Report
+      if (sections.length > 0) {
+        doc.setFontSize(50)
+        doc.text('Move-In Images', pageWidth / 2, pageHeight / 2, { align: 'center' })
+        doc.addPage() // Add new page for area images
+      }
 
       // Loop through sections to add area images
       for (let i = 0; i < sections.length; i++) {
@@ -170,12 +181,73 @@ const PropertyForm = () => {
         doc.addPage()
       }
 
-      doc.setFontSize(50)
-      // Calculate the center of the page
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const pageHeight = doc.internal.pageSize.getHeight()
+      // Deficiency Report Section
+      if (deficiencies.length > 0) {
+        doc.setFontSize(50)
+        doc.text('Deficiency Report', pageWidth / 2, pageHeight / 2, { align: 'center' })
+        doc.addPage()
+      }
 
-      // Add the "End" text, centered horizontally and vertically
+      // Each deficiency should have a comment and an array of images.
+
+      for (let i = 0; i < deficiencies.length; i++) {
+        const deficiency = deficiencies[i]
+
+        let yPos = 20 // Start position for images and comments on each page
+
+        // Add deficiency comment as header
+        if (deficiency.comment) {
+          if (yPos + 20 > 280) {
+            // Check if there's space for the comment
+            doc.addPage()
+            yPos = 20 // Reset y position on new page
+          }
+          doc.setFontSize(16) // Font size for the comment text
+          doc.text(`Deficiency ${i + 1}: ${deficiency.comment}`, 10, yPos)
+          yPos += 10
+        }
+
+        const maxHeight = 80 // Max height for images
+        const maxWidth = 90 // Max width for images
+
+        // Loop through each image in the deficiency
+        for (let j = 0; j < deficiency.images.length; j++) {
+          const imageFile = deficiency.images[j].file // Assuming images are already in base64 or file format
+
+          const base64Image = await convertToBase64(imageFile) // Convert image to base64 (if needed)
+          const imgProps = doc.getImageProperties(base64Image)
+
+          // Calculate aspect ratio and maintain original size
+          let imgWidth = imgProps.width
+          let imgHeight = imgProps.height
+          if (imgHeight > maxHeight) {
+            imgWidth = (maxHeight * imgWidth) / imgHeight
+            imgHeight = maxHeight
+          }
+          if (imgWidth > maxWidth) {
+            imgHeight = (maxWidth * imgHeight) / imgWidth
+            imgWidth = maxWidth
+          }
+
+          // Add image to PDF, handle positioning (similar to Move-In Images)
+          if (yPos + imgHeight > 280) {
+            doc.addPage() // Add new page if there's no space
+            yPos = 20 // Reset y position on new page
+          }
+
+          const xPos = j % 2 === 0 ? 10 : 110 // First or second column for images
+          doc.addImage(base64Image, 'JPEG', xPos, yPos, imgWidth, imgHeight)
+
+          // Move to the next row after placing two images side-by-side
+          if (j % 2 === 1) {
+            yPos += imgHeight + 10
+          }
+        }
+
+        doc.addPage()
+      }
+
+      doc.setFontSize(50)
       doc.text('End', pageWidth / 2, pageHeight / 2, { align: 'center' })
 
       if (action === 'download') {
@@ -193,6 +265,7 @@ const PropertyForm = () => {
 
       setIsLoading(false)
     } catch (error) {
+      setIsLoading(false)
       alert(`Error generating PDF: ${error}`)
     }
   }
@@ -204,6 +277,36 @@ const PropertyForm = () => {
       reader.onloadend = () => resolve(reader.result)
       reader.onerror = (error) => reject(error)
     })
+  }
+
+  // Function to add a new deficiency report
+  const addDeficiency = () => {
+    setDeficiencies([...deficiencies, { comment: '', images: [] }])
+  }
+
+  // Update comment for a specific deficiency
+  const updateDeficiencyComment = (index, comment) => {
+    const newDeficiencies = [...deficiencies]
+    newDeficiencies[index].comment = comment
+    setDeficiencies(newDeficiencies)
+  }
+
+  // Handle image upload for a specific deficiency
+  const handleDeficiencyImageUpload = (index, files) => {
+    const newDeficiencies = [...deficiencies]
+    const imagesArray = Array.from(files).map((file) => ({
+      id: URL.createObjectURL(file),
+      file,
+    }))
+    newDeficiencies[index].images.push(...imagesArray)
+    setDeficiencies(newDeficiencies)
+  }
+
+  // Remove image from a specific deficiency
+  const removeDeficiencyImage = (deficiencyIndex, imageIndex) => {
+    const newDeficiencies = [...deficiencies]
+    newDeficiencies[deficiencyIndex].images.splice(imageIndex, 1)
+    setDeficiencies(newDeficiencies)
   }
 
   return (
@@ -239,16 +342,17 @@ const PropertyForm = () => {
         <FileInput id='file' sizing='sm' onChange={handleBannerUpload} />
         {bannerImage ? <Image src={bannerImage} alt='Banner Image' width={200} height={300} /> : ''}
       </div>
-      <div className='flex gap-4 my-3'>
-        <h2>Move in images</h2>
+
+      <HR />
+      <div className='flex gap-4'>
+        <h2 className='text-xl font-bold dark:text-white'>Move in images</h2>
         <Button outline gradientDuoTone='purpleToBlue' size='xs' onClick={addSection}>
           +
         </Button>
       </div>
-
       {sections.map((section, index) => (
         <div key={index} className='my-5'>
-          <div className='flex gap-3'>
+          <div className='flex gap-3 items-center'>
             <TextInput
               id={`area-${index}`}
               type='text'
@@ -294,8 +398,71 @@ const PropertyForm = () => {
           </div>
         </div>
       ))}
+      <HR />
+      <div>
+        {/* Deficiency Report Section */}
+        <div className='flex gap-4'>
+          <h2 className='text-xl font-bold dark:text-white'>Deficiency Report</h2>
+          <Button outline gradientDuoTone='purpleToBlue' size='xs' onClick={addDeficiency}>
+            +
+          </Button>
+        </div>
 
-      <div className='flex gap-4'>
+        {deficiencies.map((deficiency, index) => (
+          <div key={index}>
+            <div className='my-5 flex gap-3 items-center'>
+              <Textarea
+                id={`comment-${index}`}
+                placeholder='Write a note on the deficiency'
+                className='p-2'
+                required
+                rows={4}
+                value={deficiency.comment}
+                onChange={(e) => updateDeficiencyComment(index, e.target.value)}
+              />
+              <Button
+                gradientDuoTone='purpleToBlue'
+                size='xs'
+                onClick={() => document.getElementById(`deficiency-file-input-${index}`).click()}
+                className='my-3'
+              >
+                Add images
+              </Button>
+              <input
+                id={`deficiency-file-input-${index}`}
+                type='file'
+                accept='image/*'
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => handleDeficiencyImageUpload(index, e.target.files)}
+              />
+            </div>
+            <div className='overflow-x-scroll space-x-2 py-2' style={{ maxWidth: '100%', whiteSpace: 'nowrap' }}>
+              {deficiency.images.length > 0 &&
+                deficiency.images.map((imageObj, imgIndex) => (
+                  <div key={imgIndex} className='inline-block relative'>
+                    <Image
+                      src={imageObj.id}
+                      alt={`Deficiency Image ${imgIndex}`}
+                      width={60}
+                      height={40}
+                      className='border-2 border-gray-300'
+                    />
+                    <Button
+                      size='xs'
+                      className='absolute top-0 right-0'
+                      onClick={() => removeDeficiencyImage(index, imgIndex)}
+                    >
+                      x
+                    </Button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <HR />
+      <div className='flex gap-4 my-10'>
         <Button size='xs' onClick={() => generatePDF('download')} className='w-full mt-5' gradientDuoTone='greenToBlue'>
           Generate Report
         </Button>
